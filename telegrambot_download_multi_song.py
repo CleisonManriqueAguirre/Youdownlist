@@ -100,6 +100,21 @@ async def download_audio_mp3(url: str, progress_msg: Optional[object] = None, lo
         "quiet": True,
         "no_warnings": True,
     }
+    # If a cookies file path is provided via environment, pass it to yt-dlp
+    cookie_file = os.environ.get("YTDLP_COOKIES_FILE") or os.environ.get("YTDLP_COOKIES")
+    # If YTDLP_COOKIES contains cookie contents (not a path), write to a temp file
+    if cookie_file and not os.path.exists(cookie_file):
+        try:
+            # treat cookie_file as raw cookie content and write to a temp file
+            tmp_cf = os.path.join(tempfile.gettempdir(), "ytdlp_cookies.txt")
+            with open(tmp_cf, "w", encoding="utf8") as _cf:
+                _cf.write(cookie_file)
+            cookie_file = tmp_cf
+        except Exception:
+            cookie_file = None
+
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     # Determine which loop to use for scheduling coroutine edits from the hook
     if loop is None:
@@ -229,6 +244,19 @@ async def download_playlist_mp3(url: str, progress_msg: Optional[object] = None,
         "quiet": True,
         "no_warnings": True,
     }
+    # support cookies for playlist downloads too
+    cookie_file = os.environ.get("YTDLP_COOKIES_FILE") or os.environ.get("YTDLP_COOKIES")
+    if cookie_file and not os.path.exists(cookie_file):
+        try:
+            tmp_cf = os.path.join(tempfile.gettempdir(), "ytdlp_cookies.txt")
+            with open(tmp_cf, "w", encoding="utf8") as _cf:
+                _cf.write(cookie_file)
+            cookie_file = tmp_cf
+        except Exception:
+            cookie_file = None
+
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     if loop is None:
         loop = asyncio.get_event_loop()
@@ -504,3 +532,4 @@ if __name__ == '__main__':
     print(f"Starting webhook on 0.0.0.0:{port}, webhook_url={webhook_url}")
     # run_webhook will set the webhook with Telegram
     app.run_webhook(listen='0.0.0.0', port=port, webhook_url_path=webhook_path, webhook_url=webhook_url)
+    #cookie
