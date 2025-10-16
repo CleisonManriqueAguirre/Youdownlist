@@ -1,28 +1,3 @@
-""" from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
-TOKEN = "8261552939:AAEaULq4-bAWT-CBWis7EJifhyIU4OwChM0"
-
-# Command: /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Hello Cleison! I’m your new Telegram bot!")
-
-# Command: /help
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Type /start to begin or /help to see this again.")
-
-# Main entry
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-
-    print("Bot is running...")
-    app.run_polling()
- """
-
-
 import os
 import tempfile
 import asyncio
@@ -40,12 +15,12 @@ from telegram.ext import (
 import yt_dlp
 
 # Read tokens from environment variables for safety
-TOKEN = "8261552939:AAEaULq4-bAWT-CBWis7EJifhyIU4OwChM0"
+TOKEN = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Hello! Use /yt <youtube_url> or send /yt and then reply with the YouTube URL to download the audio as MP3."
+        "Hello! Use /yt <youtube_url> or send /yt and then reply with the YouTube URL to download the audio as MP3."
     )
 
 
@@ -243,41 +218,7 @@ async def handle_download_and_send(update: Update, context: ContextTypes.DEFAULT
             await update.message.reply_audio(audio=input_file)
         await msg.delete()
     except Exception as e:
-        # Provide detailed diagnostics to the user and try a document fallback
-        import traceback as _tb
-        tb = _tb.format_exc()
-        try:
-            size = os.path.getsize(mp3_path)
-        except Exception:
-            size = None
-
-        diag = f"Failed to send audio file: {e}\nFile size: {size}\nTraceback:\n{tb[:1500]}"
-        # Trim message length if too long
-        try:
-            await msg.edit_text(diag)
-        except Exception:
-            # If editing fails, send a new message
-            try:
-                await update.message.reply_text(diag)
-            except Exception:
-                pass
-
-        # Try sending as a generic document (fallback)
-        try:
-            from telegram import InputFile
-            with open(mp3_path, "rb") as f2:
-                input_file = InputFile(f2, filename=os.path.basename(mp3_path))
-                await update.message.reply_document(document=input_file, filename=os.path.basename(mp3_path), caption="MP3 file (fallback)")
-            try:
-                await msg.delete()
-            except Exception:
-                pass
-        except Exception as e2:
-            # Report the secondary failure
-            try:
-                await update.message.reply_text(f"Also failed to send as document: {e2}")
-            except Exception:
-                pass
+        await msg.edit_text(f"Failed to send audio file: {e}")
     finally:
         # Cleanup the temporary directory containing the mp3
         try:
