@@ -1,0 +1,4 @@
+python-telegram-bot>=20.0
+yt-dlp>=2025.5.20
+# ffmpeg is required on the system path for audio conversion
+# On Windows, download and add FFmpeg to PATH: https://ffmpeg.org/
