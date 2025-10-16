@@ -488,5 +488,19 @@ if __name__ == '__main__':
     # Text handler to capture the URL after prompting the user
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
 
-    print("Bot is running...")
-    app.run_polling()
+    # Webhook mode for Render (expects TELEGRAM_WEBHOOK_BASE and PORT)
+    webhook_base = os.environ.get("TELEGRAM_WEBHOOK_BASE")
+    port = int(os.environ.get("PORT", "8000"))
+    if not webhook_base:
+        print("TELEGRAM_WEBHOOK_BASE not set. Set it to https://<your-service>.onrender.com")
+        raise SystemExit(1)
+
+    # Use a secret path derived from token to avoid exposing token in URL
+    import hashlib
+    secret_path = hashlib.sha256(TOKEN.encode('utf8')).hexdigest()[:40]
+    webhook_path = f"/{secret_path}"
+    webhook_url = webhook_base.rstrip('/') + webhook_path
+
+    print(f"Starting webhook on 0.0.0.0:{port}, webhook_url={webhook_url}")
+    # run_webhook will set the webhook with Telegram
+    app.run_webhook(listen='0.0.0.0', port=port, webhook_url_path=webhook_path, webhook_url=webhook_url)
