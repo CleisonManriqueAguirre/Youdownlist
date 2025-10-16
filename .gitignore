@@ -3,3 +3,10 @@
 telegram_*
 # Ada Library Information
 *.ali
+
+# Python / project ignores
+.env
+__pycache__/
+*.pyc
+.env.local
+.vscode/

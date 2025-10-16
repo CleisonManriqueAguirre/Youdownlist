@@ -1,4 +1,16 @@
 python-telegram-bot>=20.0
 yt-dlp>=2025.5.20
-# ffmpeg is required on the system path for audio conversion
-# On Windows, download and add FFmpeg to PATH: https://ffmpeg.org/
+ffmpeg-python>=0.3.0 ; optional helper (requires ffmpeg binary)
+python-dotenv>=1.0.0 ; optional for local .env loading
+# ffmpeg binary is required on the system PATH for audio conversion.
+#
+# Android (Termux) instructions:
+# 1. Install Termux from F-Droid or the Android store and open it.
+# 2. Update packages: pkg update && pkg upgrade
+# 3. Install Python and FFmpeg:
+#    pkg install python ffmpeg
+# 4. Install pip packages inside Termux for the bot:
+#    python -m pip install -r requirements.txt
+#
+# Note: ffmpeg-python is only a wrapper and still requires the ffmpeg binary.
+# When running on Android/Termux ensure FFmpeg is available at runtime.

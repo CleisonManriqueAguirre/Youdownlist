@@ -17,7 +17,16 @@ from telegram.ext import (
 import yt_dlp
 
 # Read tokens from environment variables for safety
-TOKEN = "8261552939:AAEaULq4-bAWT-CBWis7EJifhyIU4OwChM0"
+# Optionally load a local .env file during development (requires python-dotenv)
+try:
+    # local import; if python-dotenv isn't installed this will silently pass
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass
+
+# Read the token from the TELEGRAM_TOKEN environment variable
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 # Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,10 +408,11 @@ async def handle_download_and_send(update: Update, context: ContextTypes.DEFAULT
                     with open(p, "rb") as f:
                         await update.message.reply_document(document=InputFile(f, filename=os.path.basename(p)), caption=f"{os.path.basename(p)}")
                 except Exception:
-                    try:
-                        await update.message.reply_text(f"Failed to send file: {os.path.basename(p)}")
-                    except Exception:
-                        pass
+                    pass
+                    # try:
+                    #     await update.message.reply_text(f"Failed to send file: {os.path.basename(p)}")
+                    # except Exception:
+                    #     pass
 
             # Small delay to avoid hitting rate limits
             try:
@@ -445,6 +455,3 @@ if __name__ == '__main__':
 
     print("Bot is running...")
     app.run_polling()
-
-    print("ppp")
-
