@@ -18,15 +18,44 @@ import yt_dlp
 
 # Read tokens from environment variables for safety
 # Optionally load a local .env file during development (requires python-dotenv)
+from pathlib import Path
+_DOTENV_PATH = Path(__file__).with_name('.env')
 try:
     # local import; if python-dotenv isn't installed this will silently pass
     from dotenv import load_dotenv  # type: ignore
-    load_dotenv()
+    # Prefer a .env next to this script (works even when running from other CWDs)
+    if _DOTENV_PATH.exists():
+        load_dotenv(dotenv_path=str(_DOTENV_PATH))
+    else:
+        # fallback to default behavior (searches CWD)
+        load_dotenv()
 except Exception:
     pass
 
 # Read the token from the TELEGRAM_TOKEN environment variable
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
+
+# If token still missing, attempt a minimal .env parse as a fallback (no extra dependency)
+if not TOKEN:
+    try:
+        env_path = Path(__file__).with_name('.env')
+        if env_path.exists():
+            for line in env_path.read_text(encoding='utf8').splitlines():
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' not in line:
+                    continue
+                key, val = line.split('=', 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                # Only set variables that aren't already present
+                if key and key not in os.environ:
+                    os.environ[key] = val
+            TOKEN = os.environ.get("TELEGRAM_TOKEN")
+    except Exception:
+        # never crash on fallback
+        TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 # Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -442,7 +471,13 @@ async def handle_download_and_send(update: Update, context: ContextTypes.DEFAULT
 # Main entry
 if __name__ == '__main__':
     if not TOKEN:
+        # helpful diagnostics without revealing the token
+        dotenv_path = Path(__file__).with_name('.env')
         print("TELEGRAM_TOKEN environment variable is not set. Exiting.")
+        print("Hints:")
+        print(f" - Set TELEGRAM_TOKEN in the environment before starting the bot.")
+        print(f" - Or create a .env file at: {dotenv_path} with the line: TELEGRAM_TOKEN=your_token_here")
+        print(f" - .env present: {dotenv_path.exists()}")
         raise SystemExit(1)
 
     app = ApplicationBuilder().token(TOKEN).build()
