@@ -531,5 +531,4 @@ if __name__ == '__main__':
 
     print(f"Starting webhook on 0.0.0.0:{port}, webhook_url={webhook_url}")
     # run_webhook will set the webhook with Telegram
-    app.run_webhook(listen='0.0.0.0', port=port, webhook_url_path=webhook_path, webhook_url=webhook_url)
-    #cookie
+    app.run_webhook(listen='0.0.0.0', port=port, url_path=webhook_path, webhook_url=webhook_url)
