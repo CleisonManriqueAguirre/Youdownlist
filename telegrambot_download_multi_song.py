@@ -15,6 +15,7 @@ from telegram.ext import (
     filters,
 )
 import yt_dlp
+import datetime
 
 # Read tokens from environment variables for safety
 # Optionally load a local .env file during development (requires python-dotenv)
@@ -34,6 +35,15 @@ except Exception:
 
 # Read the token from the TELEGRAM_TOKEN environment variable
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
+
+# Cookie TTL in days (0 disables expiry). Defaults to 7 days.
+COOKIE_TTL_DAYS = int(os.environ.get("YTDLP_COOKIE_TTL_DAYS", "7"))
+
+# Optional owner id for admin commands (list all cookies)
+try:
+    BOT_OWNER_ID = int(os.environ.get("BOT_OWNER_ID")) if os.environ.get("BOT_OWNER_ID") else None
+except Exception:
+    BOT_OWNER_ID = None
 
 # If token still missing, attempt a minimal .env parse as a fallback (no extra dependency)
 if not TOKEN:
@@ -113,7 +123,23 @@ async def download_audio_mp3(url: str, progress_msg: Optional[object] = None, lo
             cookie_cfg = None
 
     if cookie_cfg:
-        ydl_opts["cookiefile"] = cookie_cfg
+        # If TTL configured, check expiry
+        try:
+            if COOKIE_TTL_DAYS > 0:
+                mtime = os.path.getmtime(cookie_cfg)
+                age_days = (time.time() - mtime) / 86400.0
+                if age_days > COOKIE_TTL_DAYS:
+                    # expired: remove file and ignore cookie
+                    try:
+                        os.remove(cookie_cfg)
+                    except Exception:
+                        pass
+                    cookie_cfg = None
+        except Exception:
+            # if we cannot stat the file, just ignore expiry
+            pass
+        if cookie_cfg:
+            ydl_opts["cookiefile"] = cookie_cfg
 
     # Determine which loop to use for scheduling coroutine edits from the hook
     if loop is None:
@@ -255,7 +281,20 @@ async def download_playlist_mp3(url: str, progress_msg: Optional[object] = None,
             cookie_cfg = None
 
     if cookie_cfg:
-        ydl_opts["cookiefile"] = cookie_cfg
+        try:
+            if COOKIE_TTL_DAYS > 0:
+                mtime = os.path.getmtime(cookie_cfg)
+                age_days = (time.time() - mtime) / 86400.0
+                if age_days > COOKIE_TTL_DAYS:
+                    try:
+                        os.remove(cookie_cfg)
+                    except Exception:
+                        pass
+                    cookie_cfg = None
+        except Exception:
+            pass
+        if cookie_cfg:
+            ydl_opts["cookiefile"] = cookie_cfg
 
     if loop is None:
         loop = asyncio.get_event_loop()
@@ -418,6 +457,67 @@ async def cleancookies_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Cookies removed for this chat.")
     else:
         await update.message.reply_text("No cookies were stored for this chat.")
+
+
+async def listcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List whether this chat has stored cookies and their age."""
+    cd = context.chat_data
+    if cd.get("cookiefile") and os.path.exists(cd.get("cookiefile")):
+        p = cd.get("cookiefile")
+        try:
+            mtime = os.path.getmtime(p)
+            age = datetime.timedelta(seconds=(time.time() - mtime))
+            await update.message.reply_text(f"Cookie file stored for this chat: {os.path.basename(p)} (age: {age})")
+        except Exception:
+            await update.message.reply_text(f"Cookie file stored for this chat: {os.path.basename(p)}")
+    elif cd.get("cookie_contents"):
+        await update.message.reply_text("Cookies stored as pasted contents for this chat (no file on disk).")
+    else:
+        await update.message.reply_text("No cookies stored for this chat.")
+
+
+async def listallcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only: list all cookie files present in temp dir matching our naming."""
+    user = update.effective_user
+    if BOT_OWNER_ID and user and user.id != BOT_OWNER_ID:
+        await update.message.reply_text("Not authorized.")
+        return
+    tmp = tempfile.gettempdir()
+    pattern = os.path.join(tmp, "ytdlp_cookies_chat_*.txt")
+    files = glob.glob(pattern)
+    if not files:
+        await update.message.reply_text("No per-chat cookie files found.")
+        return
+    lines = []
+    for f in files:
+        try:
+            mtime = os.path.getmtime(f)
+            age = datetime.timedelta(seconds=(time.time() - mtime))
+            lines.append(f"{os.path.basename(f)} (age: {age})")
+        except Exception:
+            lines.append(os.path.basename(f))
+    # split into multiple messages if too long
+    msg = "\n".join(lines)
+    await update.message.reply_text(msg)
+
+
+def startup_cleanup_cookie_files():
+    """Remove stale cookie files in temp dir that match our naming and exceed TTL."""
+    if COOKIE_TTL_DAYS <= 0:
+        return
+    tmp = tempfile.gettempdir()
+    pattern = os.path.join(tmp, "ytdlp_cookies_chat_*.txt")
+    for f in glob.glob(pattern):
+        try:
+            mtime = os.path.getmtime(f)
+            age_days = (time.time() - mtime) / 86400.0
+            if age_days > COOKIE_TTL_DAYS:
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -615,6 +715,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("setcookies", setcookies_command))
     app.add_handler(CommandHandler("setcookies_paste", setcookies_paste_command))
     app.add_handler(CommandHandler("cleancookies", cleancookies_command))
+    app.add_handler(CommandHandler("listcookies", listcookies_command))
+    app.add_handler(CommandHandler("listallcookies", listallcookies_command))
     # Text handler to capture the URL after prompting the user
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
     # Document handler for cookie files (cookies.txt)
@@ -634,5 +736,10 @@ if __name__ == '__main__':
     webhook_url = webhook_base.rstrip('/') + webhook_path
 
     print(f"Starting webhook on 0.0.0.0:{port}, webhook_url={webhook_url}")
+    # cleanup expired cookie files at startup
+    try:
+        startup_cleanup_cookie_files()
+    except Exception:
+        pass
     # run_webhook will set the webhook with Telegram
     app.run_webhook(listen='0.0.0.0', port=port, url_path=webhook_path, webhook_url=webhook_url)
