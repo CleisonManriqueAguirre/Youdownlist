@@ -74,7 +74,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # We no longer use the YouTube Data API. The bot asks the user for the YouTube URL directly.
 
 
-async def download_audio_mp3(url: str, progress_msg: Optional[object] = None, loop: Optional[asyncio.AbstractEventLoop] = None) -> str:
+async def download_audio_mp3(url: str, progress_msg: Optional[object] = None, loop: Optional[asyncio.AbstractEventLoop] = None, cookie_file: Optional[str] = None) -> str:
     """Download audio from url using yt_dlp and return path to the MP3 file.
 
     If progress_msg is provided (a telegram.Message), the function will update that
@@ -100,21 +100,20 @@ async def download_audio_mp3(url: str, progress_msg: Optional[object] = None, lo
         "quiet": True,
         "no_warnings": True,
     }
-    # If a cookies file path is provided via environment, pass it to yt-dlp
-    cookie_file = os.environ.get("YTDLP_COOKIES_FILE") or os.environ.get("YTDLP_COOKIES")
-    # If YTDLP_COOKIES contains cookie contents (not a path), write to a temp file
-    if cookie_file and not os.path.exists(cookie_file):
+    # If a cookie_file param was not passed, fall back to environment variables
+    cookie_cfg = cookie_file or os.environ.get("YTDLP_COOKIES_FILE") or os.environ.get("YTDLP_COOKIES")
+    # If cookie_cfg contains cookie contents (not a path), write to a temp file
+    if cookie_cfg and not os.path.exists(cookie_cfg):
         try:
-            # treat cookie_file as raw cookie content and write to a temp file
             tmp_cf = os.path.join(tempfile.gettempdir(), "ytdlp_cookies.txt")
             with open(tmp_cf, "w", encoding="utf8") as _cf:
-                _cf.write(cookie_file)
-            cookie_file = tmp_cf
+                _cf.write(cookie_cfg)
+            cookie_cfg = tmp_cf
         except Exception:
-            cookie_file = None
+            cookie_cfg = None
 
-    if cookie_file:
-        ydl_opts["cookiefile"] = cookie_file
+    if cookie_cfg:
+        ydl_opts["cookiefile"] = cookie_cfg
 
     # Determine which loop to use for scheduling coroutine edits from the hook
     if loop is None:
@@ -221,7 +220,7 @@ def is_playlist_url(url: str) -> bool:
         return False
 
 
-async def download_playlist_mp3(url: str, progress_msg: Optional[object] = None, loop: Optional[asyncio.AbstractEventLoop] = None, max_items: int = 50) -> tuple[list, str]:
+async def download_playlist_mp3(url: str, progress_msg: Optional[object] = None, loop: Optional[asyncio.AbstractEventLoop] = None, max_items: int = 50, cookie_file: Optional[str] = None) -> tuple[list, str]:
     """Download a playlist and return (list of MP3 file paths, tempdir). Caps at max_items.
 
     Returns a tuple (mp3_paths, tmpdir) so the caller can cleanup tmpdir after sending.
@@ -244,19 +243,19 @@ async def download_playlist_mp3(url: str, progress_msg: Optional[object] = None,
         "quiet": True,
         "no_warnings": True,
     }
-    # support cookies for playlist downloads too
-    cookie_file = os.environ.get("YTDLP_COOKIES_FILE") or os.environ.get("YTDLP_COOKIES")
-    if cookie_file and not os.path.exists(cookie_file):
+    # support cookies for playlist downloads too (prefer explicit param)
+    cookie_cfg = cookie_file or os.environ.get("YTDLP_COOKIES_FILE") or os.environ.get("YTDLP_COOKIES")
+    if cookie_cfg and not os.path.exists(cookie_cfg):
         try:
             tmp_cf = os.path.join(tempfile.gettempdir(), "ytdlp_cookies.txt")
             with open(tmp_cf, "w", encoding="utf8") as _cf:
-                _cf.write(cookie_file)
-            cookie_file = tmp_cf
+                _cf.write(cookie_cfg)
+            cookie_cfg = tmp_cf
         except Exception:
-            cookie_file = None
+            cookie_cfg = None
 
-    if cookie_file:
-        ydl_opts["cookiefile"] = cookie_file
+    if cookie_cfg:
+        ydl_opts["cookiefile"] = cookie_cfg
 
     if loop is None:
         loop = asyncio.get_event_loop()
@@ -386,6 +385,88 @@ async def yt_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_yt_url"] = True
 
 
+async def setcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Instructional command asking user to upload a cookies.txt file or paste cookies as a message."""
+    await update.message.reply_text(
+        "To set cookies, upload a cookies.txt file exported from your browser (File -> Send as document), or paste the cookie contents as a message after running /setcookies_paste.\n"
+        "This will be stored only for this chat. To remove, use /cleancookies."
+    )
+
+
+async def setcookies_paste_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start a state where the next message text will be treated as raw cookie contents."""
+    context.user_data["awaiting_cookies_paste"] = True
+    await update.message.reply_text("Please paste your cookies.txt contents in the next message. The data will be stored temporarily for this chat.")
+
+
+async def cleancookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Remove stored cookie file for this chat."""
+    cd = context.chat_data
+    removed = False
+    if cd.get("cookiefile"):
+        try:
+            path = cd.pop("cookiefile")
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+        removed = True
+    if cd.get("cookie_contents"):
+        cd.pop("cookie_contents", None)
+        removed = True
+    if removed:
+        await update.message.reply_text("Cookies removed for this chat.")
+    else:
+        await update.message.reply_text("No cookies were stored for this chat.")
+
+
+async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle uploaded document; if it's named like cookies.txt store it for the chat."""
+    if not update.message or not update.message.document:
+        return
+    doc = update.message.document
+    fname = doc.file_name or ""
+    # Only accept likely cookie files to avoid storing arbitrary uploads
+    if "cookie" not in fname.lower() and "cookies" not in fname.lower():
+        await update.message.reply_text("Uploaded file doesn't look like a cookies file. If you want to set cookies, upload your exported cookies.txt file from the browser.")
+        return
+
+    try:
+        f = await doc.get_file()
+        tmp_cf = os.path.join(tempfile.gettempdir(), f"ytdlp_cookies_chat_{update.effective_chat.id}.txt")
+        await f.download_to_drive(tmp_cf)
+        context.chat_data["cookiefile"] = tmp_cf
+        await update.message.reply_text("Cookie file saved for this chat. It will be used for future downloads in this chat.")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to save cookie file: {e}")
+
+
+async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle plain text messages. If we previously asked for a URL or cookie paste, treat accordingly."""
+    if not update.message or not update.message.text:
+        return
+
+    # Handle pasted cookie contents
+    if context.user_data.pop("awaiting_cookies_paste", False):
+        contents = update.message.text
+        try:
+            tmp_cf = os.path.join(tempfile.gettempdir(), f"ytdlp_cookies_chat_{update.effective_chat.id}.txt")
+            with open(tmp_cf, "w", encoding="utf8") as _cf:
+                _cf.write(contents)
+            context.chat_data["cookiefile"] = tmp_cf
+            # Also keep raw contents (in case env var style is needed)
+            context.chat_data["cookie_contents"] = contents
+            await update.message.reply_text("Cookies stored for this chat. They will be used for future downloads.")
+        except Exception as e:
+            await update.message.reply_text(f"Failed to store cookies: {e}")
+        return
+
+    if context.user_data.pop("awaiting_yt_url", False):
+        url = update.message.text.strip()
+        await update.message.reply_text(f"Received URL: {url}\nStarting download...")
+        await handle_download_and_send(update, context, url)
+
+
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle plain text messages. If we previously asked for a URL, treat this as the URL."""
     if not update.message or not update.message.text:
@@ -406,14 +487,32 @@ async def handle_download_and_send(update: Update, context: ContextTypes.DEFAULT
         # If the URL is a playlist, download the playlist
         if is_playlist_url(url):
             await msg.edit_text("Detected playlist URL — downloading all items...")
-            paths, playlist_tmpdir = await download_playlist_mp3(url, progress_msg=msg, loop=loop)
+            # prefer per-chat cookie file if present
+            cookie_file = context.chat_data.get("cookiefile")
+            paths, playlist_tmpdir = await download_playlist_mp3(url, progress_msg=msg, loop=loop, cookie_file=cookie_file)
             mp3_paths = paths
         else:
             # Pass the message object so the downloader can update progress
-            mp3_path = await download_audio_mp3(url, progress_msg=msg, loop=loop)
+            cookie_file = context.chat_data.get("cookiefile")
+            mp3_path = await download_audio_mp3(url, progress_msg=msg, loop=loop, cookie_file=cookie_file)
             mp3_paths = [mp3_path] if mp3_path else []
     except Exception as e:
-        await msg.edit_text(f"Download failed: {e}")
+        # Try to provide actionable guidance for yt-dlp cookie auth failures
+        err_text = str(e)
+        if "Sign in to confirm you\u2019re not a bot" in err_text or "--cookies-from-browser" in err_text or "--cookies" in err_text:
+            help_msg = (
+                "yt-dlp reported that the video requires signing in.\n"
+                "You can set cookies for this chat in one of these ways:\n"
+                "1) Send /setcookies and upload your exported cookies.txt file as a document for this chat.\n"
+                "2) Send /setcookies_paste and paste the cookies.txt contents (not recommended for public chats).\n"
+                "3) Set YTDLP_COOKIES_FILE or YTDLP_COOKIES environment variable on the host (useful for server deployments).\n"
+                "See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp for more info."
+            )
+            await msg.edit_text(help_msg)
+            return
+        else:
+            await msg.edit_text(f"Download failed: {e}")
+            return
         return
     # Verify produced files
     if not mp3_paths:
@@ -513,8 +612,13 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("yt", yt_command))
+    app.add_handler(CommandHandler("setcookies", setcookies_command))
+    app.add_handler(CommandHandler("setcookies_paste", setcookies_paste_command))
+    app.add_handler(CommandHandler("cleancookies", cleancookies_command))
     # Text handler to capture the URL after prompting the user
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    # Document handler for cookie files (cookies.txt)
+    app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, document_handler))
 
     # Webhook mode for Render (expects TELEGRAM_WEBHOOK_BASE and PORT)
     webhook_base = os.environ.get("TELEGRAM_WEBHOOK_BASE")
