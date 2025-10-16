@@ -13,12 +13,6 @@ Install dependencies:
 python -m pip install -r requirements.txt
 ```
 
-Run the bot (PowerShell):
-
-```powershell
-$env:TELEGRAM_TOKEN="<your-telegram-token>"; python telegrambot.py
-```
-
 Usage inside Telegram:
 - `/start` - simple greeting
 - `/help` - usage
