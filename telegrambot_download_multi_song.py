@@ -16,6 +16,7 @@ from telegram.ext import (
 )
 import yt_dlp
 import datetime
+import base64
 
 # Read tokens from environment variables for safety
 # Optionally load a local .env file during development (requires python-dotenv)
@@ -44,6 +45,35 @@ try:
     BOT_OWNER_ID = int(os.environ.get("BOT_OWNER_ID")) if os.environ.get("BOT_OWNER_ID") else None
 except Exception:
     BOT_OWNER_ID = None
+
+# Support base64-encoded cookies in env (helpful for Render's UI)
+_b64 = os.environ.get("YTDLP_COOKIES_B64")
+if _b64:
+    try:
+        decoded = base64.b64decode(_b64).decode("utf8")
+        # set decoded contents into YTDLP_COOKIES so downloader can write it to a temp file
+        os.environ["YTDLP_COOKIES"] = decoded
+    except Exception as _e:
+        print(f"Failed to decode YTDLP_COOKIES_B64: {_e}")
+
+def log_cookie_info():
+    """Print a non-sensitive summary of cookie-related env vars to stdout (visible in Render logs)."""
+    cfile = os.environ.get("YTDLP_COOKIES_FILE")
+    cval = os.environ.get("YTDLP_COOKIES")
+    if cfile:
+        try:
+            exists = os.path.exists(cfile)
+            size = os.path.getsize(cfile) if exists else None
+            print(f"YTDLP_COOKIES_FILE={cfile} (exists={exists}, size={size})")
+        except Exception:
+            print(f"YTDLP_COOKIES_FILE={cfile} (exists=? )")
+    if cval:
+        try:
+            print(f"YTDLP_COOKIES present: length={len(cval)} chars")
+        except Exception:
+            print("YTDLP_COOKIES present")
+    if not cfile and not cval:
+        print("No YTDLP cookies configured (YTDLP_COOKIES_FILE or YTDLP_COOKIES).")
 
 # If token still missing, attempt a minimal .env parse as a fallback (no extra dependency)
 if not TOKEN:
@@ -501,34 +531,6 @@ async def listallcookies_command(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(msg)
 
 
-async def showcookie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Owner-only: show a small safe preview of this chat's cookie file to help debug format issues."""
-    user = update.effective_user
-    if BOT_OWNER_ID and user and user.id != BOT_OWNER_ID:
-        await update.message.reply_text("Not authorized.")
-        return
-    cd = context.chat_data
-    cf = cd.get("cookiefile")
-    if not cf or not os.path.exists(cf):
-        await update.message.reply_text("No cookie file stored for this chat.")
-        return
-    try:
-        size = os.path.getsize(cf)
-        lines = []
-        with open(cf, "r", encoding="utf8", errors="ignore") as fh:
-            for i in range(10):
-                l = fh.readline()
-                if not l:
-                    break
-                lines.append(l.strip())
-        preview = "\n".join(lines)
-        # redact obvious long tokens
-        preview = preview.replace("\t", "\\t")
-        await update.message.reply_text(f"Cookie file: {os.path.basename(cf)}\nSize: {size} bytes\nPreview:\n{preview}")
-    except Exception as e:
-        await update.message.reply_text(f"Failed to read cookie file: {e}")
-
-
 def startup_cleanup_cookie_files():
     """Remove stale cookie files in temp dir that match our naming and exceed TTL."""
     if COOKIE_TTL_DAYS <= 0:
@@ -745,7 +747,6 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("cleancookies", cleancookies_command))
     app.add_handler(CommandHandler("listcookies", listcookies_command))
     app.add_handler(CommandHandler("listallcookies", listallcookies_command))
-    app.add_handler(CommandHandler("showcookie", showcookie_command))
     # Text handler to capture the URL after prompting the user
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
     # Document handler for cookie files (cookies.txt)
@@ -767,6 +768,11 @@ if __name__ == '__main__':
     print(f"Starting webhook on 0.0.0.0:{port}, webhook_url={webhook_url}")
     # cleanup expired cookie files at startup
     try:
+        # Log cookie env var status for debugging in Render logs
+        try:
+            log_cookie_info()
+        except Exception:
+            pass
         startup_cleanup_cookie_files()
     except Exception:
         pass

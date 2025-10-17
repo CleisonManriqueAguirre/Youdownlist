@@ -1,1 +1,1 @@
-web: python telegram_2.py
+web: sh entrypoint.sh
