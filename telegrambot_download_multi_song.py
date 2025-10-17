@@ -155,7 +155,7 @@ if not TOKEN:
 # Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Hello! Use /yt <youtube_url> or send /yt and then reply with the YouTube URL to download the audio as MP3."
+        "👋 Hola soy Flaviobot! Usa /yt <youtube_url> o envia /yt y luego adiciona la URL de YouTube URL para descargar el audio MP3."
     )
 
 
