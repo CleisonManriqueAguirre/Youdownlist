@@ -17,6 +17,8 @@ from telegram.ext import (
 import yt_dlp
 import datetime
 import base64
+import urllib.request
+import base64
 
 # Read tokens from environment variables for safety
 # Optionally load a local .env file during development (requires python-dotenv)
@@ -45,6 +47,59 @@ try:
     BOT_OWNER_ID = int(os.environ.get("BOT_OWNER_ID")) if os.environ.get("BOT_OWNER_ID") else None
 except Exception:
     BOT_OWNER_ID = None
+
+# Support base64-encoded cookies in env (helpful for Render's UI)
+_b64 = os.environ.get("YTDLP_COOKIES_B64")
+if _b64:
+    try:
+        decoded = base64.b64decode(_b64).decode("utf8")
+        os.environ["YTDLP_COOKIES"] = decoded
+    except Exception as _e:
+        print(f"Failed to decode YTDLP_COOKIES_B64: {_e}")
+
+def log_cookie_info():
+    cfile = os.environ.get("YTDLP_COOKIES_FILE")
+    cval = os.environ.get("YTDLP_COOKIES")
+    if cfile:
+        try:
+            exists = os.path.exists(cfile)
+            size = os.path.getsize(cfile) if exists else None
+            print(f"YTDLP_COOKIES_FILE={cfile} (exists={exists}, size={size})")
+        except Exception:
+            print(f"YTDLP_COOKIES_FILE={cfile} (exists=? )")
+    if cval:
+        try:
+            print(f"YTDLP_COOKIES present: length={len(cval)} chars")
+        except Exception:
+            print("YTDLP_COOKIES present")
+    if not cfile and not cval:
+        print("No YTDLP cookies configured (YTDLP_COOKIES_FILE or YTDLP_COOKIES).")
+
+
+def fetch_cookies_from_url():
+    url = os.environ.get("YTDLP_COOKIES_URL")
+    if not url:
+        return
+    dest = os.environ.get("YTDLP_COOKIES_FILE") or os.path.join(tempfile.gettempdir(), "ytdlp_cookies.txt")
+    token = os.environ.get("YTDLP_COOKIES_URL_TOKEN")
+    try:
+        req = urllib.request.Request(url)
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status != 200:
+                print(f"Failed to download cookies from URL: HTTP {resp.status}")
+                return
+            data = resp.read()
+        dest_dir = os.path.dirname(dest)
+        if dest_dir and not os.path.exists(dest_dir):
+            os.makedirs(dest_dir, exist_ok=True)
+        with open(dest, "wb") as fh:
+            fh.write(data)
+        os.environ["YTDLP_COOKIES_FILE"] = dest
+        print(f"Downloaded cookies from URL to {dest} (size={len(data)} bytes)")
+    except Exception as e:
+        print(f"Error fetching cookies URL: {e}")
 
 # Support base64-encoded cookies in env (helpful for Render's UI)
 _b64 = os.environ.get("YTDLP_COOKIES_B64")
@@ -766,8 +821,12 @@ if __name__ == '__main__':
     webhook_url = webhook_base.rstrip('/') + webhook_path
 
     print(f"Starting webhook on 0.0.0.0:{port}, webhook_url={webhook_url}")
-    # cleanup expired cookie files at startup
+    # Try fetch cookies from URL first, then cleanup expired cookie files at startup
     try:
+        try:
+            fetch_cookies_from_url()
+        except Exception:
+            pass
         # Log cookie env var status for debugging in Render logs
         try:
             log_cookie_info()
