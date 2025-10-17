@@ -501,6 +501,34 @@ async def listallcookies_command(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(msg)
 
 
+async def showcookie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only: show a small safe preview of this chat's cookie file to help debug format issues."""
+    user = update.effective_user
+    if BOT_OWNER_ID and user and user.id != BOT_OWNER_ID:
+        await update.message.reply_text("Not authorized.")
+        return
+    cd = context.chat_data
+    cf = cd.get("cookiefile")
+    if not cf or not os.path.exists(cf):
+        await update.message.reply_text("No cookie file stored for this chat.")
+        return
+    try:
+        size = os.path.getsize(cf)
+        lines = []
+        with open(cf, "r", encoding="utf8", errors="ignore") as fh:
+            for i in range(10):
+                l = fh.readline()
+                if not l:
+                    break
+                lines.append(l.strip())
+        preview = "\n".join(lines)
+        # redact obvious long tokens
+        preview = preview.replace("\t", "\\t")
+        await update.message.reply_text(f"Cookie file: {os.path.basename(cf)}\nSize: {size} bytes\nPreview:\n{preview}")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to read cookie file: {e}")
+
+
 def startup_cleanup_cookie_files():
     """Remove stale cookie files in temp dir that match our naming and exceed TTL."""
     if COOKIE_TTL_DAYS <= 0:
@@ -717,6 +745,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("cleancookies", cleancookies_command))
     app.add_handler(CommandHandler("listcookies", listcookies_command))
     app.add_handler(CommandHandler("listallcookies", listallcookies_command))
+    app.add_handler(CommandHandler("showcookie", showcookie_command))
     # Text handler to capture the URL after prompting the user
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
     # Document handler for cookie files (cookies.txt)
