@@ -121,7 +121,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "4. Upload here: /setcookies"
         )
 
-    elif query.data == "cookies_advanced":
+    elif query.data == "auto_cookies":
+        await auto_cookie_setup(update, context)
+
+    elif query.data == "help_upload":
+        await query.edit_message_text(
+            "📁 **Upload Cookie File**\n\n"
+            "1. Export cookies.txt from your browser\n"
+            "2. Send the file to this chat as a document\n"
+            "3. I'll automatically save and test it\n\n"
+            "**Supported formats:** cookies.txt (Netscape format)"
+        )
+
+    elif query.data == "help_paste":
+        await query.edit_message_text(
+            "📋 **Paste Cookie Contents**\n\n"
+            "1. Use /setcookies_paste command\n"
+            "2. Paste your raw cookie contents\n"
+            "3. I'll save them for this chat\n\n"
+            "**Note:** Only use this in private chats for security"
+        )
         await query.edit_message_text(
             "🔧 **Advanced Cookie Setup**\n\n"
             "**Method 1: File Upload**\n"
@@ -303,7 +322,8 @@ async def send_multiple_files(update: Update, msg, mp3_files: list):
 async def setcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📁 Upload File", callback_data="help_upload")],
-        [InlineKeyboardButton("📋 Paste Text", callback_data="help_paste")]
+        [InlineKeyboardButton("📋 Paste Text", callback_data="help_paste")],
+        [InlineKeyboardButton("🤖 Auto-Setup Guide", callback_data="auto_cookies")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -312,6 +332,75 @@ async def setcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Choose how you want to provide cookies:",
         reply_markup=reply_markup
     )
+
+async def auto_cookie_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate personalized cookie setup instructions."""
+    try:
+        # Call the cookie automation script to generate instructions
+        process = await asyncio.create_subprocess_exec(
+            "./cookie-automation.sh", "export",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0:
+            instructions = stdout.decode()
+            await update.message.reply_text(f"```\n{instructions}\n```", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ Could not generate auto-setup instructions")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle uploaded cookie files."""
+    if not update.message or not update.message.document:
+        return
+
+    doc = update.message.document
+    fname = doc.file_name or ""
+
+    if "cookie" not in fname.lower() and "cookies" not in fname.lower():
+        await update.message.reply_text("📄 File doesn't appear to be a cookies file. Upload your browser's exported cookies.txt file.")
+        return
+
+    try:
+        f = await doc.get_file()
+        tmp_cf = os.path.join(tempfile.gettempdir(), f"ytdlp_cookies_chat_{update.effective_chat.id}.txt")
+        await f.download_to_drive(tmp_cf)
+        context.chat_data["cookiefile"] = tmp_cf
+
+        # Test the cookies using the automation script
+        test_result = await test_cookies_file(tmp_cf)
+        if test_result:
+            await update.message.reply_text("✅ Cookie file saved and tested successfully! Ready for downloads.")
+        else:
+            await update.message.reply_text("⚠️ Cookie file saved but may not be working. Try downloading to test.")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to save cookie file: {e}")
+
+async def test_cookies_file(cookies_path: str) -> bool:
+    """Test if cookies file works using the automation script."""
+    try:
+        # Create a temporary script to test cookies
+        test_cmd = [
+            "yt-dlp", "--cookies", cookies_path, "--simulate",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *test_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await process.communicate()
+        return process.returncode == 0
+
+    except Exception:
+        return False
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -333,6 +422,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("setcookies", setcookies_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, document_handler))
 
     # Run bot
     webhook_base = os.environ.get("TELEGRAM_WEBHOOK_BASE")
