@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: youtube-telegram-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon
+    plan: starter
+    branch: main
+    healthCheckPath: /
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false  # Set manually in Render dashboard for security
+      - key: TELEGRAM_WEBHOOK_BASE
+        generateValue: true  # Render will auto-generate the webhook URL
+      - key: PORT
+        value: 8000
+      - key: YTDLP_COOKIE_TTL_DAYS
+        value: 7
+      - key: PYTHONUNBUFFERED
+        value: 1
+    buildCommand: ""  # Using Dockerfile
+    startCommand: ""  # Using Dockerfile ENTRYPOINT
+    autoDeploy: true
+    dockerCommand: ""
+    scaling:
+      minInstances: 1
+      maxInstances: 1

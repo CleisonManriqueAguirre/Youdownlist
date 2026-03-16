@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build: .
+    container_name: youtube-telegram-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - BOT_OWNER_ID=${BOT_OWNER_ID}
+      - YTDLP_COOKIE_TTL_DAYS=7
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # Optional: Mount cookies file if you have one locally
+      - ./cookies.txt:/run/secrets/ytdlp_cookies.txt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Redis for caching (if you want to add it later)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: youtube-bot-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"

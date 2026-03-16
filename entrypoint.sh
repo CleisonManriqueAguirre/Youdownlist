@@ -23,4 +23,4 @@ if [ -f "$YTDLP_COOKIES_FILE" ]; then
   echo "Cookie file created: $YTDLP_COOKIES_FILE (size: $(wc -c < "$YTDLP_COOKIES_FILE") bytes)"
 fi
 
-exec python telegram_2.py
+exec python telegram_bot_fixed.py

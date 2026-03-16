@@ -20,7 +20,7 @@ TOKEN = "8261552939:AAEaULq4-bAWT-CBWis7EJifhyIU4OwChM0"
 # Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Hello! Use /yt <youtube_url> or send /yt and then reply with the YouTube URL to download the audio as MP3."
+        "👋 Hello! Use /yt <youtube_url> or send /yt and then reply with the YouTube URL to download the audio as MP3."
     )
 
 

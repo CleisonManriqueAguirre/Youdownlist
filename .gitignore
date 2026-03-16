@@ -1,12 +1,62 @@
-# Object file
-*.o
-telegram_*
-# Ada Library Information
-*.ali
-
-# Python / project ignores
-.env
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment files
+.env
 .env.local
+.env.production
+.env.development
+
+# IDE
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cookies and secrets
+cookies.txt
+*.cookies
+secrets/
+
+# Docker
+.dockerignore
+
+# Local test files
+test_*.py
+debug_*
+
+# Backup files
+*.bak
+*.backup
